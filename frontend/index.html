@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Energy Theft Detection Dashboard</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --danger:#f87171;
+    --good:#4ade80; --text:#e2e8f0; --muted:#94a3b8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  header{padding:24px 32px;border-bottom:1px solid #334155;}
+  header h1{margin:0;font-size:1.5rem;}
+  header p{margin:4px 0 0;color:var(--muted);}
+  main{padding:24px 32px;display:flex;flex-direction:column;gap:24px;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;}
+  .card{background:var(--card);border-radius:10px;padding:16px 20px;}
+  .card .label{color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;}
+  .card .value{font-size:1.8rem;font-weight:600;margin-top:4px;}
+  section{background:var(--card);border-radius:10px;padding:20px;}
+  section h2{margin-top:0;font-size:1.1rem;color:var(--accent);}
+  table{width:100%;border-collapse:collapse;font-size:.9rem;}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155;}
+  th{color:var(--muted);font-weight:500;}
+  tr:hover{background:#273449;}
+  .badge{padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:600;}
+  .badge.theft{background:rgba(248,113,113,.15);color:var(--danger);}
+  .badge.ok{background:rgba(74,222,128,.15);color:var(--good);}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;}
+  .tab{padding:6px 14px;border-radius:6px;background:#0f172a;cursor:pointer;color:var(--muted);border:1px solid #334155;}
+  .tab.active{background:var(--accent);color:#0f172a;font-weight:600;border-color:var(--accent);}
+  .search{margin-bottom:12px;}
+  .search input{background:#0f172a;border:1px solid #334155;color:var(--text);padding:8px 12px;border-radius:6px;width:240px;}
+  .bar-wrap{display:flex;align-items:center;gap:8px;}
+  .bar-bg{flex:1;background:#0f172a;border-radius:4px;overflow:hidden;height:8px;}
+  .bar-fill{height:100%;background:var(--accent);}
+  footer{padding:16px 32px;color:var(--muted);font-size:.8rem;text-align:center;}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Energy Theft Detection Dashboard</h1>
+  <p>Smart meter anomaly &amp; risk scoring overview</p>
+</header>
+
+<main>
+  <div class="cards" id="summaryCards"></div>
+
+  <section>
+    <h2>Model Comparison</h2>
+    <div class="tabs" id="modelTabs"></div>
+    <table id="metricsTable">
+      <thead><tr><th>Model</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>ROC AUC</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Precision / Recall @ K</h2>
+    <table id="prkTable">
+      <thead><tr><th>Top Fraction</th><th>K (customers)</th><th>Precision@K</th><th>Recall@K</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Inspection Alert List <span style="color:var(--muted);font-weight:400;font-size:.8rem;">(ranked by risk score)</span></h2>
+    <div class="search"><input id="searchBox" placeholder="Search consumer ID..." /></div>
+    <table id="alertsTable">
+      <thead><tr><th>Rank</th><th>Consumer ID</th><th>Risk Score</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<footer>Static dashboard reading local pipeline outputs · served for local viewing only</footer>
+
+<script>
+async function loadCSV(path){
+  const res = await fetch(path);
+  const text = await res.text();
+  const [headerLine, ...lines] = text.trim().split("\n");
+  const headers = headerLine.split(",");
+  return lines.map(line => {
+    const cells = line.split(",");
+    const obj = {};
+    headers.forEach((h,i) => obj[h.trim()] = cells[i] !== undefined ? cells[i].trim() : "");
+    return obj;
+  });
+}
+
+function fmtPct(v){ return (parseFloat(v)*100).toFixed(1) + "%"; }
+
+async function init(){
+  const [metricsRes, modelRows, prkRows, alertRows] = await Promise.all([
+    fetch('metrics.json').then(r=>r.json()),
+    loadCSV('model_comparison.csv'),
+    loadCSV('precision_recall_at_k.csv'),
+    loadCSV('inspection_alert_list.csv')
+  ]);
+
+  // Summary cards (best model = random_forest typically first row)
+  const best = modelRows[0];
+  const totalCustomers = alertRows.length;
+  const flaggedTheft = alertRows.filter(r => r.actual_theft === "1").length;
+
+  document.getElementById('summaryCards').innerHTML = `
+    <div class="card"><div class="label">Best Model</div><div class="value" style="text-transform:capitalize">${best.model.replace('_',' ')}</div></div>
+    <div class="card"><div class="label">Accuracy</div><div class="value">${fmtPct(best.accuracy)}</div></div>
+    <div class="card"><div class="label">Precision</div><div class="value">${fmtPct(best.precision)}</div></div>
+    <div class="card"><div class="label">Recall</div><div class="value">${fmtPct(best.recall)}</div></div>
+    <div class="card"><div class="label">Customers Scored</div><div class="value">${totalCustomers}</div></div>
+    <div class="card"><div class="label">Confirmed Theft in List</div><div class="value" style="color:var(--danger)">${flaggedTheft}</div></div>
+  `;
+
+  // Model tabs + table
+  const tabsEl = document.getElementById('modelTabs');
+  modelRows.forEach((m,i) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (i===0 ? ' active' : '');
+    tab.textContent = m.model.replace('_',' ');
+    tab.style.textTransform = 'capitalize';
+    tab.onclick = () => {
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      renderMetricsRow(m);
+    };
+    tabsEl.appendChild(tab);
+  });
+  function renderMetricsRow(m){
+    document.querySelector('#metricsTable tbody').innerHTML = `
+      <tr>
+        <td style="text-transform:capitalize">${m.model.replace('_',' ')}</td>
+        <td>${fmtPct(m.accuracy)}</td>
+        <td>${fmtPct(m.precision)}</td>
+        <td>${fmtPct(m.recall)}</td>
+        <td>${fmtPct(m.f1)}</td>
+        <td>${fmtPct(m.roc_auc)}</td>
+      </tr>`;
+  }
+  renderMetricsRow(modelRows[0]);
+
+  // PR@K table
+  document.querySelector('#prkTable tbody').innerHTML = prkRows.map(r => `
+    <tr>
+      <td>${fmtPct(r.top_fraction)}</td>
+      <td>${r.k}</td>
+      <td>${fmtPct(r['precision@k'])}</td>
+      <td>${fmtPct(r['recall@k'])}</td>
+    </tr>`).join('');
+
+  // Alerts table
+  function renderAlerts(filter=""){
+    const rows = alertRows
+      .filter(r => r.CONS_NO.toLowerCase().includes(filter.toLowerCase()))
+      .slice(0, 100)
+      .map(r => {
+        const pct = Math.min(100, Math.max(0, parseFloat(r.risk_score)*100));
+        const isTheft = r.actual_theft === "1";
+        return `
+        <tr>
+          <td>${r.rank}</td>
+          <td>${r.CONS_NO}</td>
+          <td>
+            <div class="bar-wrap">
+              <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${isTheft?'#f87171':'#38bdf8'}"></div></div>
+              <span>${fmtPct(r.risk_score)}</span>
+            </div>
+          </td>
+          <td><span class="badge ${isTheft?'theft':'ok'}">${isTheft?'Theft':'Normal'}</span></td>
+        </tr>`;
+      }).join('');
+    document.querySelector('#alertsTable tbody').innerHTML = rows || '<tr><td colspan="4">No matches</td></tr>';
+  }
+  renderAlerts();
+  document.getElementById('searchBox').addEventListener('input', e => renderAlerts(e.target.value));
+}
+
+init().catch(err => {
+  document.querySelector('main').innerHTML = `<p style="color:#f87171">Failed to load data: ${err.message}. Make sure you're running this via a local server (e.g. <code>python -m http.server</code>) in this folder, not opening the file directly.</p>`;
+});
+</script>
+</body>
+</html>
