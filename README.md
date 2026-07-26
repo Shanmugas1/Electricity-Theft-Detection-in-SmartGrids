@@ -67,8 +67,6 @@ python src/visualize_results.py
 | `inspection_alert_list.csv` | Every test-set consumer ranked by combined risk score |
 | `metrics.json` | Full metrics incl. confusion matrices, all models |
 
-## Models (slide 5 / slide 6)
-
 - **Random Forest** and **XGBoost** — trained on 16 engineered features per
   consumer (load variance, weekday/weekend ratio, autocorrelation at 1/7/30
   day lags, change-point score, capping score, zero-day runs, trend slope).
@@ -84,8 +82,6 @@ outperform tree models on tabular-style features. This gap itself is a
 legitimate finding to report in later reviews, and `src/models.py` is
 structured so hyperparameters (LSTM units, epochs, tree depth) are easy to
 tune once the real, larger SGCC dataset is substituted in.
-
-## Scope note
 
 This matches the **Zeroth Review scope** from the slides: offline training
 and evaluation only. Real-time deployment, SCADA/billing integration, and a
